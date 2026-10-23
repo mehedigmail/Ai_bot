@@ -1,0 +1,782 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080d18">
+  <title>AI Trading Agent</title>
+
+  <style>
+    :root {
+      --bg: #080d18;
+      --panel: #111a2b;
+      --panel2: #0c1423;
+      --border: #243149;
+      --text: #edf3ff;
+      --muted: #8b9ab4;
+      --green: #20d99a;
+      --red: #ff6178;
+      --blue: #6595ff;
+      --yellow: #f5c96b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+    }
+
+    button, select {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    .app {
+      max-width: 1100px;
+      padding: 16px;
+      margin: auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo {
+      width: 42px;
+      height: 42px;
+      border-radius: 13px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, #437bff, #20d99a);
+      color: #07101d;
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    h1, h2, p {
+      margin: 0;
+    }
+
+    .brand h1 {
+      font-size: 19px;
+      letter-spacing: -.5px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 9px 11px;
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--yellow);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot.online {
+      background: var(--green);
+    }
+
+    .dot.offline {
+      background: var(--red);
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 13px;
+    }
+
+    .metric-value {
+      font-size: 22px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .metric-note {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .green {
+      color: var(--green);
+    }
+
+    .red {
+      color: var(--red);
+    }
+
+    .yellow {
+      color: var(--yellow);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(270px, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 17px;
+      margin-bottom: 14px;
+      min-width: 0;
+    }
+
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 17px;
+    }
+
+    .panel-head h2 {
+      font-size: 15px;
+    }
+
+    .tag {
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+
+    .field-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    select {
+      width: 100%;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      outline: none;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .chart {
+      position: relative;
+      height: 245px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: #0a1220;
+      background-image:
+        linear-gradient(#1c2a3d 1px, transparent 1px),
+        linear-gradient(90deg, #1c2a3d 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    .chart-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      line-height: 1.8;
+      font-size: 12px;
+      background: rgba(8, 13, 24, .5);
+    }
+
+    .chart svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .chart-note {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 10px;
+      line-height: 1.7;
+    }
+
+    .signal-box {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      padding: 17px;
+      text-align: center;
+    }
+
+    .signal-label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+    }
+
+    .signal-value {
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 1px;
+    }
+
+    .signal-reason {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+      margin-top: 12px;
+    }
+
+    .signal-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .meta-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: left;
+    }
+
+    .meta-box span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .meta-box strong {
+      font-size: 14px;
+    }
+
+    .action-button {
+      width: 100%;
+      margin-top: 14px;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      background: var(--blue);
+      color: white;
+      font-weight: 700;
+    }
+
+    .action-button:disabled {
+      opacity: .6;
+      cursor: wait;
+    }
+
+    .disclaimer {
+      border: 1px solid #4b3c20;
+      background: #211b12;
+      color: #e6c98a;
+      border-radius: 11px;
+      padding: 12px;
+      font-size: 11px;
+      line-height: 1.8;
+      margin-top: 14px;
+    }
+
+    .history {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .history th, .history td {
+      padding: 11px 6px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+
+    .history th {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .empty-row {
+      color: var(--muted);
+      text-align: center !important;
+      padding: 20px 5px !important;
+    }
+
+    .footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.8;
+      padding: 20px 0 8px;
+    }
+
+    @media (max-width: 650px) {
+      .app {
+        padding: 12px;
+      }
+
+      .brand h1 {
+        font-size: 16px;
+      }
+
+      .logo {
+        width: 38px;
+        height: 38px;
+      }
+
+      .status {
+        padding: 8px;
+        font-size: 10px;
+      }
+
+      .grid {
+        gap: 8px;
+      }
+
+      .card {
+        padding: 12px 10px;
+        border-radius: 12px;
+      }
+
+      .metric-label {
+        font-size: 10px;
+        min-height: 25px;
+      }
+
+      .metric-value {
+        font-size: 18px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        padding: 14px;
+      }
+
+      .chart {
+        height: 220px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <h1>Trading Agent</h1>
+          <p class="subtitle">AI-powered market analysis</p>
+        </div>
+      </div>
+
+      <div class="status">
+        <span class="dot" id="statusDot"></span>
+        <span id="connectionStatus">Connecting...</span>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div class="card">
+        <p class="metric-label">Market Price</p>
+        <div class="metric-value" id="marketPrice">--</div>
+        <p class="metric-note" id="priceNote">Waiting for live data</p>
+      </div>
+
+      <div class="card">
+        <p class="metric-label">Market Trend</p>
+        <div class="metric-value" id="marketTrend">--</div>
+        <p class="metric-note">Based on market analysis</p>
+      </div>
+
+      <div class="card">
+        <p class="metric-label">AI Confidence</p>
+        <div class="metric-value" id="confidence">--%</div>
+        <p class="metric-note">Not a win probability</p>
+      </div>
+    </section>
+
+    <div class="layout">
+      <section>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Market Overview</h2>
+            <span class="tag">REAL MARKET</span>
+          </div>
+
+          <div class="controls">
+            <div>
+              <label class="field-label" for="symbol">Currency Pair</label>
+              <select id="symbol">
+                <option value="EUR/USD">EUR/USD</option>
+                <option value="GBP/USD">GBP/USD</option>
+                <option value="USD/JPY">USD/JPY</option>
+                <option value="AUD/USD">AUD/USD</option>
+                <option value="USD/CAD">USD/CAD</option>
+                <option value="EUR/GBP">EUR/GBP</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="field-label" for="timeframe">Timeframe</label>
+              <select id="timeframe">
+                <option value="1min">1 Minute</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="chart" id="chart">
+            <div class="chart-empty" id="chartMessage">
+              <div>
+                <strong>Market chart not connected</strong>
+                <br>
+                Live candles will appear after the backend is configured.
+              </div>
+            </div>
+          </div>
+
+          <p class="chart-note" id="marketUpdated">
+            Data source: Twelve Data · Awaiting connection
+          </p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Technical Indicators</h2>
+            <span class="tag">1 MIN</span>
+          </div>
+
+          <div class="grid" style="margin-bottom:0">
+            <div class="card">
+              <p class="metric-label">RSI (14)</p>
+              <div class="metric-value" id="rsi">--</div>
+            </div>
+            <div class="card">
+              <p class="metric-label">EMA Trend</p>
+              <div class="metric-value" id="ema">--</div>
+            </div>
+            <div class="card">
+              <p class="metric-label">MACD</p>
+              <div class="metric-value" id="macd">--</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>AI Signal</h2>
+            <span class="tag">GEMINI AI</span>
+          </div>
+
+          <div class="signal-box">
+            <p class="signal-label">CURRENT SIGNAL</p>
+            <div class="signal-value yellow" id="signal">WAIT</div>
+            <p class="signal-reason" id="signalReason">
+              No signal yet. Connect the backend and analyze real market
+              data before making any trading decision.
+            </p>
+          </div>
+
+          <div class="signal-meta">
+            <div class="meta-box">
+              <span>Analysis Time</span>
+              <strong id="analysisTime">--:--:--</strong>
+            </div>
+            <div class="meta-box">
+              <span>Expiry Reference</span>
+              <strong>1 Minute</strong>
+            </div>
+            <div class="meta-box">
+              <span>RSI Status</span>
+              <strong id="rsiStatus">Waiting</strong>
+            </div>
+            <div class="meta-box">
+              <span>Data Status</span>
+              <strong id="dataStatus">Not connected</strong>
+            </div>
+          </div>
+
+          <button class="action-button" id="analyzeButton">
+            Analyze Market
+          </button>
+
+          <div class="disclaimer">
+            Warning: Signals are analytical estimates, not guaranteed
+            predictions. Confirm that the market price matches your
+            trading platform. This dashboard does not place trades.
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Signal History</h2>
+            <span class="tag">SESSION</span>
+          </div>
+
+          <table class="history">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Pair</th>
+                <th>Signal</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              <tr>
+                <td colspan="3" class="empty-row">
+                  No analyzed signals yet
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <footer class="footer">
+      AI Trading Agent · Real market analysis dashboard
+      <br>
+      For research and educational use. Trading involves risk.
+    </footer>
+  </main>
+
+  <script>
+    /*
+      The backend will be connected in a later step.
+      Never place Twelve Data or Gemini API keys in this file.
+    */
+
+    const API_BASE = "";
+
+    const $ = (id) => document.getElementById(id);
+
+    let historyItems = [];
+    let isAnalyzing = false;
+
+    function setConnection(status, message) {
+      $("connectionStatus").textContent = message;
+
+      $("statusDot").className = "dot";
+
+      if (status === "online") {
+        $("statusDot").classList.add("online");
+      } else if (status === "offline") {
+        $("statusDot").classList.add("offline");
+      }
+    }
+
+    function showTime() {
+      $("analysisTime").textContent =
+        new Date().toLocaleTimeString();
+    }
+
+    function showError(message) {
+      $("signal").textContent = "WAIT";
+      $("signal").className = "signal-value yellow";
+      $("signalReason").textContent = message;
+      $("confidence").textContent = "--%";
+    }
+
+    function addHistory(pair, signal) {
+      historyItems.unshift({
+        time: new Date().toLocaleTimeString(),
+        pair,
+        signal
+      });
+
+      historyItems = historyItems.slice(0, 10);
+
+      $("historyBody").innerHTML = historyItems.map(item => {
+        let color = "yellow";
+
+        if (item.signal === "BUY") color = "green";
+        if (item.signal === "SELL") color = "red";
+
+        return `
+          <tr>
+            <td>${item.time}</td>
+            <td>${item.pair}</td>
+            <td class="${color}">${item.signal}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function analyzeMarket() {
+      if (isAnalyzing) return;
+
+      isAnalyzing = true;
+      $("analyzeButton").disabled = true;
+      $("analyzeButton").textContent = "Analyzing...";
+      showTime();
+
+      const symbol = $("symbol").value;
+
+      if (!API_BASE) {
+        setConnection("offline", "Backend not configured");
+        $("dataStatus").textContent = "Not connected";
+        $("marketUpdated").textContent =
+          "Twelve Data: waiting for backend configuration";
+
+        showError(
+          "Backend is not connected yet. The next setup steps will " +
+          "connect Twelve Data and Gemini AI. No fake signal is generated."
+        );
+
+        isAnalyzing = false;
+        $("analyzeButton").disabled = false;
+        $("analyzeButton").textContent = "Analyze Market";
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_BASE}/api/analyze?symbol=${encodeURIComponent(symbol)}`,
+          { headers: { "Accept": "application/json" } }
+        );
+
+        if (!response.ok) {
+          throw new Error("Backend returned HTTP " + response.status);
+        }
+
+        const data = await response.json();
+
+        if (!data || !["BUY", "SELL", "WAIT"].includes(data.signal)) {
+          throw new Error("Invalid signal response");
+        }
+
+        setConnection("online", "Backend connected");
+        $("dataStatus").textContent = "Connected";
+        $("marketPrice").textContent =
+          data.price == null ? "--" : data.price;
+
+        $("marketTrend").textContent = data.trend || "Unknown";
+        $("confidence").textContent =
+          Number.isFinite(data.confidence)
+            ? Math.round(data.confidence) + "%"
+            : "--%";
+
+        $("rsi").textContent = data.rsi ?? "--";
+        $("ema").textContent = data.emaTrend || "--";
+        $("macd").textContent = data.macdTrend || "--";
+        $("rsiStatus").textContent = data.rsiStatus || "Available";
+
+        $("signal").textContent = data.signal;
+        $("signal").className = "signal-value " +
+          (data.signal === "BUY" ? "green" :
+           data.signal === "SELL" ? "red" : "yellow");
+
+        $("signalReason").textContent =
+          data.reason || "Analysis completed.";
+
+        $("marketUpdated").textContent =
+          "Last update: " + new Date().toLocaleTimeString();
+
+        addHistory(symbol, data.signal);
+
+      } catch (error) {
+        setConnection("offline", "Connection error");
+        $("dataStatus").textContent = "Unavailable";
+
+        showError(
+          "Could not retrieve verified market analysis. Check the " +
+          "backend and data connection. " + error.message
+        );
+      } finally {
+        isAnalyzing = false;
+        $("analyzeButton").disabled = false;
+        $("analyzeButton").textContent = "Analyze Market";
+      }
+    }
+
+    $("analyzeButton").addEventListener("click", analyzeMarket);
+
+    $("symbol").addEventListener("change", () => {
+      $("marketPrice").textContent = "--";
+      $("marketTrend").textContent = "--";
+      $("chartMessage").style.display = "grid";
+      $("chartMessage").innerHTML =
+        "<div><strong>Waiting for market data</strong><br>" +
+        "Selected pair: " + $("symbol").value + "</div>";
+
+      showError("Analyze the selected pair after connecting the backend.");
+    });
+
+    showTime();
+    setConnection("offline", "Backend not configured");
+  </script>
+</body>
+</html>
