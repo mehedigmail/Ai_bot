@@ -1,3 +1,4 @@
+
 require("dotenv").config();
 
 const express = require("express");
@@ -10,26 +11,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY;
+const CLAUDE_API_KEY = process.env.ANTHROPIC_API_KEY;
+const CLAUDE_MODEL =
+  process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 
-const GROQ_MODEL = process.env.GROQ_MODEL || "openai/gpt-oss-20b";
+const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY;
+const MIN_CONFIDENCE = 80;
 
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     message: "AI Trading Agent backend is running",
     twelveDataConfigured: Boolean(TWELVE_DATA_API_KEY),
-    groqConfigured: Boolean(GROQ_API_KEY),
-    model: GROQ_MODEL
+    claudeConfigured: Boolean(CLAUDE_API_KEY),
+    model: CLAUDE_MODEL,
+    minimumConfidence: MIN_CONFIDENCE
   });
 });
 
 app.get("/api/analyze", async (req, res) => {
   try {
-    if (!TWELVE_DATA_API_KEY || !GROQ_API_KEY) {
+    if (!TWELVE_DATA_API_KEY || !CLAUDE_API_KEY) {
       return res.status(503).json({
-        error: "API keys are not configured in backend environment variables."
+        error:
+          "ANTHROPIC_API_KEY or TWELVE_DATA_API_KEY is missing in Render Environment."
       });
     }
 
@@ -50,7 +55,7 @@ app.get("/api/analyze", async (req, res) => {
       });
     }
 
-    // Fetch one-minute market candles from Twelve Data.
+    // Fetch market candles from Twelve Data.
     const url = new URL(
       "https://api.twelvedata.com/time_series"
     );
@@ -63,25 +68,30 @@ app.get("/api/analyze", async (req, res) => {
     const marketResponse = await fetch(url);
     const marketData = await marketResponse.json();
 
-    if (!marketResponse.ok || marketData.status === "error") {
-      console.error("Twelve Data error:", marketData.message);
+    if (
+      !marketResponse.ok ||
+      marketData.status === "error" ||
+      !Array.isArray(marketData.values)
+    ) {
+      console.error(
+        "Twelve Data error:",
+        marketData.message || marketResponse.status
+      );
 
       return res.status(502).json({
-        error: marketData.message ||
+        error:
+          marketData.message ||
           "Market data request failed. Check Twelve Data API access and quota."
       });
     }
 
-    if (
-      !Array.isArray(marketData.values) ||
-      marketData.values.length < 30
-    ) {
+    if (marketData.values.length < 60) {
       return res.status(502).json({
         error: "Insufficient market candles received."
       });
     }
 
-    // Twelve Data returns candles newest first.
+    // Twelve Data normally returns newest candle first.
     const candles = marketData.values
       .slice()
       .reverse()
@@ -98,10 +108,13 @@ app.get("/api/analyze", async (req, res) => {
         !Number.isFinite(c.open) ||
         !Number.isFinite(c.high) ||
         !Number.isFinite(c.low) ||
-        !Number.isFinite(c.close)
+        !Number.isFinite(c.close) ||
+        c.high < c.low ||
+        c.high < Math.max(c.open, c.close) ||
+        c.low > Math.min(c.open, c.close)
       )
     ) {
-      throw new Error("Market data contains invalid prices.");
+      throw new Error("Invalid market candle data.");
     }
 
     const closes = candles.map(c => c.close);
@@ -127,9 +140,8 @@ app.get("/api/analyze", async (req, res) => {
 
       for (let i = 1; i <= period; i++) {
         const change = values[i] - values[i - 1];
-
-        if (change > 0) gains += change;
-        else losses -= change;
+        gains += Math.max(change, 0);
+        losses += Math.max(-change, 0);
       }
 
       let avgGain = gains / period;
@@ -137,35 +149,42 @@ app.get("/api/analyze", async (req, res) => {
 
       for (let i = period + 1; i < values.length; i++) {
         const change = values[i] - values[i - 1];
-        const gain = Math.max(change, 0);
-        const loss = Math.max(-change, 0);
 
         avgGain =
-          (avgGain * (period - 1) + gain) / period;
+          (avgGain * (period - 1) +
+            Math.max(change, 0)) / period;
 
         avgLoss =
-          (avgLoss * (period - 1) + loss) / period;
+          (avgLoss * (period - 1) +
+            Math.max(-change, 0)) / period;
       }
 
+      if (avgGain === 0 && avgLoss === 0) return 50;
       if (avgLoss === 0) return 100;
+      if (avgGain === 0) return 0;
 
       return 100 - 100 / (1 + avgGain / avgLoss);
     }
 
     const last = closes[closes.length - 1];
     const previous = closes[closes.length - 2];
-    const rsi = calculateRSI(closes, 14);
 
-    const ema9 = ema(closes.slice(-40), 9);
-    const ema21 = ema(closes.slice(-60), 21);
+    const rsi = calculateRSI(closes, 14);
+    const ema9 = ema(closes, 9);
+    const ema21 = ema(closes, 21);
 
     const emaTrend =
       ema9 > ema21 ? "Bullish" :
       ema9 < ema21 ? "Bearish" : "Neutral";
 
-    const macdLine =
-      ema(closes.slice(-35), 12) -
-      ema(closes.slice(-35), 26);
+    // Calculate MACD line using the same close-price series.
+    const macdLine = ema(closes, 12) - ema(closes, 26);
+
+    const macdTrend =
+      macdLine > 0 ? "Positive" :
+      macdLine < 0 ? "Negative" : "Neutral";
+
+    const recentCandles = candles.slice(-20);
 
     const marketSummary = {
       symbol,
@@ -178,20 +197,20 @@ app.get("/api/analyze", async (req, res) => {
       ema21: Number(ema21.toFixed(6)),
       emaTrend,
       macdLine: Number(macdLine.toFixed(8)),
-      recentCandles: candles.slice(-20)
+      macdTrend,
+      recentCandles
     };
 
     const prompt = `
-You are a cautious financial market analysis assistant.
+You are a cautious market-data analysis assistant.
 
-Analyze the supplied one-minute market candle data.
-Never guarantee profit or claim certainty.
-Do not invent data or predict future prices as facts.
+Analyze the supplied currency-market data.
+Do not guarantee profit, invent data, or claim certainty.
 
-Return ONLY valid JSON in this exact structure:
+Return ONLY valid JSON in this structure:
 {
-  "signal": "BUY",
-  "confidence": 50,
+  "signal": "WAIT",
+  "confidence": 0,
   "trend": "Neutral",
   "rsiStatus": "Neutral",
   "reason": "Brief explanation"
@@ -200,64 +219,69 @@ Return ONLY valid JSON in this exact structure:
 Rules:
 - signal must be BUY, SELL, or WAIT.
 - confidence must be an integer from 0 to 100.
+- Confidence is an analytical score, NOT a measured win probability.
 - trend must be Bullish, Bearish, or Neutral.
 - rsiStatus must be Oversold, Overbought, or Neutral.
-- Use WAIT if evidence is weak or conflicting.
-- Confidence is analytical confidence, not probability of winning.
-- Do not include Markdown or code fences.
+- Use BUY only when the evidence supports an upward setup.
+- Use SELL only when the evidence supports a downward setup.
+- Use WAIT when evidence is weak, mixed, or uncertain.
+- Do not treat one indicator as proof.
+- Do not assume the next candle's direction is known.
+- Return JSON only, without Markdown.
 
 Market data:
 ${JSON.stringify(marketSummary)}
 `;
 
-    // Request analysis from Groq.
-    const groqResponse = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
+    // Call Claude Messages API.
+    const claudeResponse = await fetch(
+      "https://api.anthropic.com/v1/messages",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_API_KEY}`
+          "x-api-key": CLAUDE_API_KEY,
+          "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: GROQ_MODEL,
+          model: CLAUDE_MODEL,
+          max_tokens: 400,
+          temperature: 0,
+          system:
+            "Analyze financial market data cautiously. Never guarantee a result. Return valid JSON only.",
           messages: [
-            {
-              role: "system",
-              content:
-                "You analyze market data cautiously and return valid JSON only."
-            },
             {
               role: "user",
               content: prompt
             }
-          ],
-          temperature: 0.2,
-          max_completion_tokens: 500
+          ]
         })
       }
     );
 
-    const groqData = await groqResponse.json();
+    const claudeData = await claudeResponse.json();
 
-    if (!groqResponse.ok) {
+    if (!claudeResponse.ok) {
       console.error(
-        "Groq API error:",
-        JSON.stringify(groqData)
+        "Claude API error:",
+        JSON.stringify(claudeData)
       );
 
       return res.status(502).json({
         error:
-          groqData.error?.message ||
-          "Groq API request failed. Check API access, model availability and quotas."
+          claudeData.error?.message ||
+          "Claude API request failed. Check API key, model access, billing and rate limits."
       });
     }
 
-    const answer =
-      groqData.choices?.[0]?.message?.content;
+    const answer = (claudeData.content || [])
+      .filter(block => block.type === "text")
+      .map(block => block.text)
+      .join("\n")
+      .trim();
 
     if (!answer) {
-      throw new Error("Groq returned an empty response.");
+      throw new Error("Claude returned an empty response.");
     }
 
     const jsonText = answer
@@ -288,25 +312,63 @@ ${JSON.stringify(marketSummary)}
       "Neutral"
     ];
 
+    const trend = validTrends.includes(analysis.trend)
+      ? analysis.trend
+      : "Neutral";
+
+    const rsiStatus = validRSIStatuses.includes(analysis.rsiStatus)
+      ? analysis.rsiStatus
+      : "Neutral";
+
+    // Strict filter: the AI's score must reach 80 AND
+    // the EMA and MACD directions must agree.
+    // This is a filter, not proof of an 80% win rate.
+    let finalSignal = analysis.signal;
+    let finalReason = String(
+      analysis.reason || "Analysis completed."
+    );
+
+    const bullishConfirmation =
+      emaTrend === "Bullish" &&
+      macdTrend === "Positive";
+
+    const bearishConfirmation =
+      emaTrend === "Bearish" &&
+      macdTrend === "Negative";
+
+    const indicatorsAgree =
+      (analysis.signal === "BUY" && bullishConfirmation) ||
+      (analysis.signal === "SELL" && bearishConfirmation);
+
+    if (
+      analysis.signal === "WAIT" ||
+      confidence < MIN_CONFIDENCE ||
+      !indicatorsAgree
+    ) {
+      finalSignal = "WAIT";
+
+      if (confidence < MIN_CONFIDENCE) {
+        finalReason =
+          `WAIT: analytical score is below ${MIN_CONFIDENCE}. ` +
+          finalReason;
+      } else if (!indicatorsAgree) {
+        finalReason =
+          "WAIT: EMA and MACD do not confirm the AI direction. " +
+          finalReason;
+      }
+    }
+
     res.json({
       symbol,
       price: last,
       rsi: Number(rsi.toFixed(2)),
       emaTrend,
-      macdTrend:
-        macdLine > 0 ? "Positive" :
-        macdLine < 0 ? "Negative" : "Neutral",
-      trend: validTrends.includes(analysis.trend)
-        ? analysis.trend
-        : "Neutral",
-      rsiStatus: validRSIStatuses.includes(analysis.rsiStatus)
-        ? analysis.rsiStatus
-        : "Neutral",
-      signal: analysis.signal,
+      macdTrend,
+      trend,
+      rsiStatus,
+      signal: finalSignal,
       confidence: Math.round(confidence),
-      reason: String(
-        analysis.reason || "Analysis completed."
-      ),
+      reason: finalReason,
       candleTime: candles[candles.length - 1].time,
       analyzedAt: new Date().toISOString()
     });
@@ -315,7 +377,8 @@ ${JSON.stringify(marketSummary)}
     console.error("Analysis error:", error.message);
 
     res.status(502).json({
-      error: "Analysis failed. Check backend logs, API access and quotas."
+      error:
+        "Analysis failed. Check Render logs, Claude API access, model availability and Twelve Data quota."
     });
   }
 });
